@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fi">
+
+<head>
+    <title>Submit new portal</title>
+    <meta charset="utf-8" />
+    <style>
+        label,
+        input {
+            display: block;
+        }
+        
+        label {
+            margin-bottom: 10px;
+        }
+        
+        .platlong {
+            width: 400px;
+            border-style: solid:
+        }
+    </style>
+</head>
+
+<body>
+    <form>
+        <fieldset>
+            <legend>Portaalin tallennustyökalu</legend>
+
+            <label for="nimi">
+                Portaalin nimi:
+                <input name="nimi" value="Halla" id="nimi" size="20">
+            </label>
+
+            <label for="linkki">
+                Linkki:
+                <input name="linkki" value="http://www.ingress.com/intel?ll=62.231939,25.767131&amp;z=16&amp;pll=62.231055,25.768524" id="linkki" size="20">
+            </label>
+            <input type="button" value="Lisää" onclick="process()">
+
+        </fieldset>
+    </form>
+    <form>
+        <p id="pnimi"></p>
+        <p id="plong"></p>
+        <p id="plat"></p>
+        <label for="platlong">
+
+            KML-elementti:
+            <textarea name="kml" id="platlong" rows="40" cols="100" readonly="readonly"></textarea>
+        </label>
+
+
+
+    </form>
+
+
+
+    <!-- <h1 id="kml">KML-elementti:</h1> -->
+
+    <!-- 
+	<button onclick="submit()">Tallenna</button> -->
+    <script>
+        function process() {
+            var nimi, linkki;
+            var lng, lat;
+            nimi = document.getElementById("nimi").value;
+            linkki = document.getElementById("linkki").value;
+            var koord = getLongLat(linkki);
+            lng = koord[0];
+            lat = koord[1];
+            document.getElementById("pnimi").innerHTML = "Portaalin nimi: " + nimi;
+            document.getElementById("plong").innerHTML = "Pituuaste (long): " + lng;
+            document.getElementById("plat").innerHTML = "Leveysaste (lat): " + lat;
+
+            var kmlDoc = "<Placemark>\n" + "<name>" + nimi + "</name>\n" + "<styleUrl>#m_ylw-pushpin</styleUrl>\n" + "<Point>\n" + "<gx:drawOrder>1</gx:drawOrder>\n" + "<coordinates>" + lng + "," + lat + ",0" + "</coordinates>\n" + "</Point>\n" + "</Placemark>\n";
+            document.getElementById("platlong").value = document.getElementById("platlong").value + kmlDoc;
+        }
+
+        //Parsitaan leveysaste ja pituusaste Intel-linkistä tai IITC:n koordinaattiparista
+        function getLongLat(teksti) {
+            var lat = 0;
+            var lng = 0;
+            var code = getCode(teksti);
+            switch (code) {
+            case "linkki":
+                var latlong = teksti.substring(teksti.lastIndexOf("=") + 1, teksti.length);
+                latlong = latlong.split(",", 2)
+                lng = latlong[1];
+                lat = latlong[0];
+                break;
+
+            case "koord":
+                break;
+
+            default:
+                break;
+            }
+            return [lng, lat];
+        }
+
+        //Selvitetään onko syötetekstin tyyppi Intel-linkki vai IITC-koordinaattipari
+        //@return "linkki" jos Intel-linkki, "koord" jos IITC-koordinaattipari
+        function getCode(teksti) {
+            return "linkki" //TODO: Tee regular expression, joka tarkistaa, onko kyseessä validi URL
+        }
+    </script>
+
+</body>
+
+</html>
