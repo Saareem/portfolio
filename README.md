@@ -10,4 +10,4 @@ I initially used to copy the coordinates of the portal and its name into Google 
 
 # python
 ## Exercise-4-programming.ipynb
-The Jupyter notebook was written as a course assignment for "Spatial data science for sustainable development" at Aalto University. The project is described in the notebook. Most of the basic writing is initially included in the notebook which was supplied by the course instructor but all the Python code was written by me. The assignment uses Python GIS libraries such as GeoPandas, NetworkX 
+The Jupyter notebook was written as a course assignment for "Spatial data science for sustainable development" at Aalto University. The project is described in the notebook. Most of the basic writing is initially included in the notebook which was supplied by the course instructor but all the Python code was written by me. The assignment uses Python GIS libraries such as GeoPandas, NetworkX, OSMnx, Esda and PySAL. 
