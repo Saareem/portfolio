@@ -73,3 +73,37 @@ Note that we also hope to see you use Markdown cells to explain your data analys
 Grading criteria for the final exercise are [available on the course website](https://geo-python-site.readthedocs.io/en/latest/final-exercise/grading.html).
 
 The total number of points you can receive is 40.
+
+## Feedback
+
+Excellent work, Eemeli! Crushed it :). There are a few things I would have done differently, but you did everything that was expected and produced exactly the results I was hoping to see. I was also very pleased to see you chose to handle the "winter problem" with December of the previous year being part of the next year's winter. This is a nice example of a seemingly simple problem in theory, but one that requires a creative solution. I was pleased to see yours! Well done!
+
+Some more notes: 
+
+- I was expecting you would combine the estimates and TAVG data values in the processing input step, but I see you do this later in the notebook.
+
+### Points
+
+Detailed final project grading rubric available on the couse website.
+
+| Item                         | Points |
+| ---------------------------- | ------ |
+| Reading data file            | 5      |
+| Processing input             | 5      |
+| Defining and using functions | 5      |
+| Aggregating data             | 5      |
+| Plot, data                   | 5      |
+| Plot, format                 | 5      |
+| Markdown documentation       | 5      |
+| Code comments and style      | 5      |
+| **Total**                    | 40     |
+
+## Course grade
+
+- Final exercise: 40/40
+- Weekly exercises: 59.5/60
+- Total points: 99.5/100
+
+Course grade: 5/5
+
+- Dave
