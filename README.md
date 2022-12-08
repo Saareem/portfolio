@@ -45,3 +45,15 @@ check whether your code works.
 
  - [Problem 1 (10 points)](Exercise-4-problem-1.ipynb)
  - [Problem 2 (10 points)](Exercise-4-problem-2.ipynb)
+
+## Exercise 4 grade and feedback: 20.0 / 20.0 points
+### Grader
+- Justus :sunglasses:
+### Problem scores
+- Problem 1: 10.0 / 10.0
+- Problem 2: 10.0 / 10.0
+### Comments
+- You did it all! :neckbeard:
+- I like how you used many functions to complete this exercise 🐻
+- And good inline comments :relaxed:
+- 
