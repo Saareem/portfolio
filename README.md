@@ -32,3 +32,30 @@ Let your creativity run free, and show us what you’ve learnt!
 
  - [Problem 1 (10 points)](Exercise-5-problem-1.ipynb)
  - [Problem 2 (10 points)](Exercise-5-problem-2.ipynb)
+
+
+
+---
+
+## Exercise 5 grade and feedback: 15/20 points
+
+
+### Problem scores:
+
+- Problem 1: 10 points 
+- Problem 2: 5 points
+
+
+### Comments
+
+Fantastic work on *problem 1*, excellent idea for *problem 2*, but I guess you
+ran out of time?
+
+Full points for *problem 1*: the map is beautiful, the topic creative and
+exciting, and you very clearly know what you are doing. Thanks for the comments
+throughout the code (even a scientific citation!), and great how this is actual
+research!
+
+For *problem 2*, unfortunately, I can only award half of the points. It is obvious that you know your way around making maps in Python, but your submission simply does not meet many of the grading criteria: while using multiple, merged, data sources, it shows only one layer, and only the raw input data. You also did not include legend, title, or data attribution.
+
+That said, I recognise that you definitely learnt how to create static and interactive maps in Python. Your code is very readable and easy to follow, well done!
