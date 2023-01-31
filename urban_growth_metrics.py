@@ -10,6 +10,14 @@ import urllib.parse
 import re
 import copy
 from functools import reduce
+import itertools
+# Patches are needed for legend handles (Proxy Artist)
+import matplotlib.patches as mpatches
+# Needed for colormaps
+import matplotlib
+# Mapclassify is used for value reclassification
+import mapclassify
+import contextily as cx
 logger = logging.getLogger(__name__)
 
 
@@ -331,7 +339,7 @@ def rename_and_merge_gdfs(left, right, intersected_cols, key):
         res::gpd.GeoDataFrame                         : A dataframe which results from the merge.
                                                         
     """
-    logger.info("Start renaming and mergin dataframes: {l}, {r}, {ic}, {k}".format(key=key, ic=intersected_cols, l=left, r=right))
+    logger.info("Start renaming and mergin dataframes: {l}, {r}, {ic}, {k}".format(k=key, ic=intersected_cols, l=left, r=right))
     # First assign GeoDataFrames as None
     year_left, gdf_left = None, None
     # If `left` is a tuple and the values have types int and GeoDataFrame, 
@@ -355,7 +363,7 @@ def rename_and_merge_gdfs(left, right, intersected_cols, key):
     res = gdf_left.merge(right=gdf_right, how='inner', on=key, suffixes=(None, "_{}".format(year_right)))
     # Set the geometry column.
     res = res.set_geometry("geometry")
-    logger.info("Finished renaming and mergin dataframes: {l}, {r}, {ic}, {k}, {res}".format(key=key, ic=intersected_cols, l=left, r=right, res=res))
+    logger.info("Finished renaming and mergin dataframes: {l}, {r}, {ic}, {k}, {res}".format(k=key, ic=intersected_cols, l=left, r=right, res=res))
     return res
 
 
@@ -442,7 +450,7 @@ def timeseries_diff(df_timeseries_rows, columns=[], rename_map={}, percentage_ch
                        True: {"diff_col": "diff_p_{}", "fun" : lambda x: x.pct_change()}}
     # Loop through all columns and
     # calculate difference columns according to the 
-    # selected difference calculation method (absolute,relative)
+    # selected difference calculation method (absolute=diff,relative=pct_change)
     for col in columns:
         diff_col = diff_col_prefix[percentage_change]["diff_col"].format(col)
         diff_fun = diff_col_prefix[percentage_change]["fun"]
@@ -455,7 +463,8 @@ def timeseries_diff(df_timeseries_rows, columns=[], rename_map={}, percentage_ch
     
     # Take a deepcopy to avoid changing the original
     rename_map = copy.deepcopy(rename_map)
-    # Rename changed column names to those requested by user.
+    # Rename changed column names to those requested by user
+    # or the original names, if user does not have preferences.
     for diff_col, col in zip(diff_cols, columns):
         if col in rename_map:
             deleted_value = rename_map.pop(col)
@@ -480,3 +489,264 @@ def timeseries_diff(df_timeseries_rows, columns=[], rename_map={}, percentage_ch
     # in changing orders.
     sorted_cols = sorted(list(df.columns.values))
     return df[sorted_cols]
+
+
+def timeseries_gdf_diff(timeseries_gdf, prefixes=[]):
+    """
+    Calculates difference columns for each column in the GeoDataFrame assuming the
+    columns in the gdf are named by appending year to the end of the original
+    column and grouping by column prefix in 'prefixes'. For example:
+    If original data had column prefix 'men', and the data spanned years from
+    2018 to 2020, the timeseries geodataframe
+    would contain 'men_2018', 'men_2019' and 'men_2020'.
+    The columns are grouped by prefix and the difference column would 
+    be calculated between consecutive years. Essentially,
+    difference between 2018 and 2019,
+    difference betweeb 2019 and 2020, 
+    would be calculated for prefix 'men'
+    and the resulting 
+    dataframe would then contain new columns:
+    - 'men_2018_2019_diff', 'men_2018_2019_pct', 'men_2019_2020_diff', 'men_2019_2020_pct'
+    and the original columns.
+    
+    Parameters:
+    -----------
+        timeseries_gdf::GeoDataFrame      : Is a timeseries dataframe where columns from several years
+                                            have been merged to one dataframe and columns have year appended 
+                                            to the end. 
+        prefixes::list(str)               : Prefixes for the columns in the timeseries GeoDataFrame, which have 
+                                            year appended
+    Return:
+    -------
+        gdf::GeoDataFrame                 : The GeoDataFrame with all the original and all the difference columns
+        original_cols::list(str)          : The list of original columns in the timeseries GeoDataFrame
+        diff_cols::list(str)              : The list of new absolute change columns. Each column ends with '_diff'
+        pct_cols::list(str)               : The list of new relative change columns. Each column ends with '_pct'
+    """
+    df_cols = list(timeseries_gdf.columns.values)
+    assert len(df_cols) > 1, "Dataframe must have at least two columns"
+    # Make a list of columns by prefix -pairs
+    cols_by_prefix = [(prefix, list(filter(lambda x: x.startswith(prefix), timeseries_gdf.columns))) for prefix in prefixes]
+    # Make a list of all columns which are yearly columns according to the prefix
+    cols_from_prefixes = list(itertools.chain(*[ls for (col, ls) in cols_by_prefix]))
+    # Take intersection of columns in the oroginal data frame and those
+    # grouped from prefixes
+    col_intersection = set(cols_from_prefixes).intersection(df_cols)
+    columns = None
+    # Use the column intersection only if it's
+    # not shorter than the list of original
+    # columns
+    if len(col_intersection) < len(set(df_cols)):
+        columns = df_cols
+    else:
+        # Columns are safe to be used as is
+        columns = list(col_intersection)
+    
+    # deeply copy the dataframe, so the original does not change
+    df = timeseries_gdf[columns].copy(deep=True)
+    diff_cols = []
+    pct_cols = []
+
+    for (prefix, ls_cols) in cols_by_prefix:
+        # Construct pairs of columns from consecutive years
+        for a,b in itertools.pairwise(ls_cols):
+            # Split year from the end of the string
+            # assuming there's "_xxxx" at the end where "xxxx" denotes year. 
+            year_a = a.split('_')[-1]
+            year_b = b.split('_')[-1]
+            # Make beginning for the result column by appending
+            # start and end year to the prefix
+            col_suffix = "{pr}_{ya}_{yb}".format(pr=prefix, ya=year_a, yb=year_b)
+            # Add diff to the absolute difference column
+            col_diff = "{}_diff".format(col_suffix)
+            # and pct to the relative change column
+            col_pct = "{}_pct".format(col_suffix)
+            # Calculate absolute difference
+            df[col_diff] = df[b] - df[a]
+            # Calculate relative difference in percentages (% form)
+            df[col_pct] = (( df[b] - df[a]) / df[a]) * 100
+            # Add each column to the list of absolute
+            # and relative change columns
+            diff_cols.append(col_diff)
+            pct_cols.append(col_pct)
+    
+    # Use all difference columns as new columns
+    new_cols = diff_cols + pct_cols
+    #print(diff_cols)
+    # Sort columns alphabetically
+    final_cols = sorted(new_cols + columns)
+    gdf = df
+    original_cols = df_cols
+    return gdf, original_cols, diff_cols, pct_cols
+
+
+def plot_population_differences(group_str, dcol, pcol, city1_gdf, city2_gdf, 
+                                cities_str, k, t, size=(12,12), cmap_s='coolwarm', 
+                                legend_bbox=(1.6, 1), wspace=1, hspace=0.001, 
+                                legend_background_color='grey'):
+    """
+    Plots a set of population difference columns with geopandas.GeoDataFrame.plot()
+    as a 2x2 subplots where row stands for the type of difference (absolute, relative)
+    and columns stands for the city. Figure will contain:
+    - On the first row:
+      - Absolute difference plots for both cities using the 'dcol'
+    on the second row:
+      - Relative difference plots for both cities using the 'pcol'
+    
+    Each row will be classified using `mapclassify` library 
+    by concatenating the column values from both cities' GeoDataFrames 
+    and therefore the colors have uniform scale accross the row, 
+    both on the map and the legend. Each row has a shared legend.
+    
+    Parameters:
+    -----------
+        group_str::str           : The name of the plotted group as a string. Name describes the plotted
+                                   set of difference columns. It's essentially a more descriptive name
+                                   for the common prefix of 'dcol' and 'pcol'. This will be added to 
+                                   the end a of each legend title as a separate row.
+        dcol::str                : A absolute difference column from timeseries_gdf_diff() with a '_diff'
+                                   as the prefix. The column values will contain absolute difference of 
+                                   two years.
+        pcol::str                : A relative difference column from timeseries_gdf_diff() with a '_pct'
+                                   as the prefix. The column values will contain relative difference of 
+                                   two years in percentages (as % so don't multiply by 100).
+        city1_gdf::GeoDataFrame  : timeseries GeoDataFrame from timeseries_gdf_diff() for city1
+        city2_gdf::GeoDataFrame  : timeseries GeoDataFrame from timeseries_gdf_diff() for city2
+        cities_str::list(str)    : A list of city names in the form "City, Country" such as "Helsinki, Finland".
+                                   Will be added as the title on the corresponding column.
+        k::int                   : Number of classes the column values are classified to
+        t::str                   : Title for the whole figure
+        size::tuple(float,float) : Size as a (width, height) tuple for the figure
+        cmap_s::str              : String representation of valid matplotlib Colormap
+        legend_bbox::tuple(f,f)  : bbox_to_anchor for the legend as a (float,float) tuple. Adjusts the position
+                                   of the legends relative to the axes on the first column of each row
+        wspace::float            : The horizontal space in inches between the subplots. Increase
+                                   the default if the legend does not fit into the space between the plots.
+        hspace::float            : The vertical space between the subplots in inches
+        legend_background_color  : The background color of the legend as a string presentation of matplotlib
+                                   Color.
+    Return:
+    ------
+        fig::matplotlib.Figure   : The resulting figure of 2x2 subplots. Each city on each column and each
+                                   difference type on each row. Each axes will be plotted using WebMercator
+                                   (epsg:3857) since it's best supported by Contextily background maps.
+        
+    """
+    logger.info(('Start plotting population difference subplots:'
+                 'group_str:{gs}, dcol:{dc}, pcol:{pc}, cmap:{cm},'
+                 'legend_bbox:{lb}').format(gs=group_str, dc=dcol,pc=pcol,cm=cmap_s,lb=legend_bbox))
+    # Make a list of difference columns so they can be used
+    # in list comprehensions and loops
+    diff_cols = [dcol, pcol]
+    # Do the same for GeoDataFrames
+    gdfs = [city1_gdf, city2_gdf]
+    # This is needed for the classification to work. 
+    # Infinity in classification will ruin the classificaton
+    # as every bin except the first will be infinite.
+    pd.options.mode.use_inf_as_na = True
+    # Loop through every combination of difference column - GeoDataFrame pair
+    # to form a 2-dimensional array which works nicely with the plotting loop
+    gdfs_arr = [[g[g[col].notna()].reset_index()[[col, 'geometry']] for g in gdfs] for col in diff_cols] 
+    # Resulting "array" will have city1 on the first column, city2 on the next,
+    # absolute change on the first row and relative change on the last row.
+    
+    # Make a colormap for plotting
+    cmap = matplotlib.cm.get_cmap(cmap_s)
+    
+    # Concatenate series of absolute differences and
+    # take the min and max values.
+    series_concat_d = pd.concat([g[diff_cols[0]] for g in gdfs_arr[0]] )
+    vmin_d, vmax_d = series_concat_d.min(), series_concat_d.max()
+    
+    # The same for relative differences
+    series_concat_p = pd.concat([g[diff_cols[1]] for g in gdfs_arr[1]])
+    vmin_p, vmax_p = series_concat_p.min(), series_concat_p.max()
+    
+    # Build normalization object using the min and max values and center=0.
+    # This is an attempt to make negative change blue and positive change red.
+    norm_d = matplotlib.colors.TwoSlopeNorm(vmin=vmin_d, vcenter=0, vmax=vmax_d)
+    norm_p = matplotlib.colors.TwoSlopeNorm(vmin=vmin_p, vcenter=0, vmax=vmax_p)
+    
+    # Build classifier for absolute change using the 
+    # concatenated series of values. This will make 
+    # the color and number scale uniform accross the same type
+    # of difference column, i.e. row of the plot.
+    fj_d = mapclassify.FisherJenks(series_concat_d, k)
+    classifier_d = fj_d.make(k=k)
+    
+    # Do the same with relative change
+    fj_p = mapclassify.FisherJenks(series_concat_p, k)
+    classifier_p = fj_p.make(k=k)
+    classifiers = [classifier_d, classifier_p]
+    
+    # Use the bins to make appropriate colors for
+    # the legend handles for absolute change
+    bins_d = list(fj_d.bins)
+    colors_d = [cmap(norm_d(val)) for val in bins_d]
+    
+    # Now the same with relative change
+    bins_p = list(fj_p.bins)
+    colors_p = [cmap(norm_p(val)) for val in bins_p]
+    
+    # Loop through every GeoDataFrame in the gdfs_arr, and use classifiers and colors to 
+    # calculate classification column and color column for all the frames.
+    for row, diff_col, clsr, color_list in zip(gdfs_arr, diff_cols, classifiers, [colors_d, colors_p]):
+        for gdf in row:
+            # Calculate classification column for every difference column
+            # using the respective classifier
+            gdf['cl'] = gdf[[diff_col]].apply(clsr)
+            # Use the classification to give colors for every row in the
+            # dataframes
+            gdf['cl_color'] = gdf['cl'].apply(lambda c: color_list[c]) 
+    
+    # Build legend handles (patch + label) for each change type. ("Proxy Artists")
+    handles_d = [mpatches.Patch(color=c, label=l) for c, l in zip(colors_d, fj_d.get_legend_classes())]
+    handles_p = [mpatches.Patch(color=c, label=l) for c, l in zip(colors_p, fj_p.get_legend_classes())]
+    
+    # Make a list of handles so they can be easily used in the plotting loop
+    handles = [handles_d, handles_p]
+    # Legend titles for both difference types
+    changes = ['Change (people),\n{}'.format(group_str), 'Change (%),\n{}'.format(group_str)]
+    gdfs = gdfs_arr
+    
+    # Make a subplots object
+    fig, axes = plt.subplots(2,2, figsize=size)
+    # Loop through every row and column in the dataframes
+    # and subplots axes and plot
+    for r in range(0, len(axes)):
+        for c in range(0, len(axes[r])):
+            # Difference column changes by row
+            diff_col = diff_cols[r]
+            # Correct gdf is in the same index of the 2-dimensional
+            # array as the index of the matplotlib Axes.
+            # Project to Web Mercator, which the 
+            gdf = gdfs[r][c].to_crs("epsg:3857")
+            # Correct axes for the plot
+            ax_rc = axes[r][c]
+            # Plot the gdf using axes and colorize by precalculated color Series
+            # Don't make a legend as that is build separately.
+            ax = gdf.plot(ax=ax_rc, color=gdf['cl_color'], legend=False)
+            # Set axis labels
+            ax.set_xlabel('x (m)')
+            ax.set_ylabel('y (m)')
+            # Adjust horizontal and vertical space between axes
+            # to make legend fit between the plots
+            plt.subplots_adjust(wspace=wspace, hspace=hspace)
+            # Add legend to axes only on the first column. 
+            # Another one isn't needed as they share the legend.
+            if c==0:
+                ax.legend(handles=handles[r], bbox_to_anchor=legend_bbox, title=changes[r], facecolor=legend_background_color)
+            # Set the title for each plot using the name of city
+            ax_rc.set_title("{city}".format(city=cities_str[c]), y=1.0)
+            # Add basemap using Contextily
+            cx.add_basemap(ax=ax)
+            logger.info('Plotted subplot axes for {c}, diff_col:{dc}'.format(c=cities_str[c], dc=diff_col))
+    # Add a title for the figure
+    fig.suptitle(t=t)
+    # Disable the use_inf_as_na. Consider switching back earlier. In
+    # distributed environment lot of bad stuff could happen with a
+    # global options like this
+    pd.options.mode.use_inf_as_na = False
+    logger.info('Figure complete for {cl}'.format(cl=cities_str))
+    return fig
+                

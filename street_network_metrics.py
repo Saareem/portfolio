@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import osmnx as ox
 import logging
+from utils import list_to_str
 
 # Initialize logger for the module
 logger = logging.getLogger(__name__)
@@ -31,11 +32,11 @@ def get_network(osm_city, network_type='bike'):
     assert type(osm_city) == str, 'You should provide a string'
     assert osm_city is not None, 'You should provide a city name'
     logger.info('Start downloading network for {city}, network_type={t}'.format(city=osm_city, t=network_type))
-    graph = ox.graph_from_place(osm_city, network_type=network_type)
+    graph = ox.graph_from_place(osm_city, network_type=network_type, retain_all=True)
     assert graph is not None, 'No graphs returned by the query'
     logger.info('Network downloaded for {city}. Object: {g}'.format(city=osm_city, t=type(graph), g=graph))
     return osm_city, graph
-
+    
 
 def graphs_to_gdfs(graph_objs):
     """
@@ -92,16 +93,6 @@ def gdf_value_counts(cityname, gdf, col_name, type_title, explode=False):
         renamed_col::str            : A name for the count value column
         counts::pandas.DataFrame    : A dataframe for the value counts
     """
-    
-    def list_to_str(ls):
-        """
-        Converts list of strings to string 
-        but leaves strings unchanged.
-        """
-        if all([len(elem) > 1 and type(elem) == str for elem in ls]):
-            return ", ".join(ls)
-        else:
-            return ls
         
     logger.info('Extracting value counts: {city}, exploded={exp}.'.format(city=cityname, exp=explode))
     renamed_col = 'Count ({city})'.format(city=cityname)
@@ -119,7 +110,7 @@ def gdf_value_counts(cityname, gdf, col_name, type_title, explode=False):
     # Rename some columns for nice visualizations
     counts = counts.rename({col_name: renamed_col, 'index': type_title}, axis=1)
     return renamed_col, counts
-
+    
 
 def join_highway_type_counts(gdf_dict, val_count_col, join_col, cities):
     """
@@ -173,3 +164,97 @@ def join_highway_type_counts(gdf_dict, val_count_col, join_col, cities):
     joined_counts = left.merge(right=right, left_on=join_col, right_on=join_col, how='outer')
     logger.info('Type counts joined on "{key}"'.format(key=join_col))
     return joined_counts_exp, joined_counts
+
+
+def label_gdf_by_connected_subgraph_id(G, comp_col):
+    """
+    Takes a networkX graph and returns a GeoDataFrame
+    where edges belonging to same subgraph have the same
+    group ID. Resulting dataframe will have as many unique
+    group IDs as there are connected components in the graph.
+    The function wont change the original graph. The graph
+    will be projected to a suitable UTM zone system before
+    calculating components.
+    
+    Parameters:
+    -----------
+        G::networkx.multidigraph.MultiDiGraph  : A graph whose subgraphs are being labeled in the 
+                                                 resulting GeoDataFrame
+        comp_col::string                       : Name for the component ID column in the gdf
+    
+    Return:
+        connected_components::list(MultiGraph) : A list of undirected connected subgraphs of G
+        gdf::geopandas.GeoDataFrame            : A GeoDataFrame with group numbers according to
+                                                 the connected subgraphs.
+    """
+    # Project graph
+    U = ox.project_graph(G)
+    
+    # Take a copy and make it undirected as
+    # nx.connected_components() generator is
+    # implemented only for undirected graphs
+    U = U.copy().to_undirected()
+    connected_components = []
+    
+    # Create the generator which creates
+    # connected components of the graph
+    comps = nx.connected_components(U)
+    
+    # Loop through components from largest to smallest
+    for c in sorted(comps, key=len, reverse=True):
+        # Take the subgraph and save it to a list of connected
+        # components
+        comp = U.subgraph(c)
+        connected_components.append(comp)
+    
+    # Loop through connected components graph by graph
+    # and label edges in the parent graph by assigning 
+    # an incrementing group ID to the edges
+    for i, graph in enumerate(connected_components):
+        
+        # Loop through edges in the graph
+        for u, v, key, data in graph.edges(data=True, keys=True):
+            # Add group ID to the edge, if it's in the original graph
+            if U.has_edge(u,v,key):
+                U.edges[u,v,key][comp_col] = i
+                
+    # Return the connected components as a list and 
+    # labeled graph edges as a GeoDataFrame
+    gdf = ox.graph_to_gdfs(U, nodes=False)
+    return connected_components, gdf
+
+
+def basic_stats_for_graphs(cities, graph_obj):
+    """
+    Populates input graph object with convex hulls, their areas 
+    and basic stats for the cities. Seperates non-elementary columns such as
+    "street_per_node_counts" and "street_per_node_proportions" as separate
+    value for easier analysis.
+    
+    Parameters:
+    -----------
+        cities::tuple(str): A tuple of city names
+        graph_obj::dict   : Dictionary containing data for the cities´ graphs
+    
+    Return:
+        graph_obj::dict   : Dictionary containing data for the cities´ graphs, including 
+                            convex hull, its area and basic stats
+    """
+    for city in cities:
+        edges = graph_obj[city]['edges']
+        graph = graph_obj[city]['graph']
+        logger.info('Calculating convex hull for {}'.format(city))
+        convex_hull = edges.unary_union.convex_hull
+        graph_obj[city]['convex_hull'] = gpd.GeoDataFrame(index=[0], data={'city': [city]}, geometry=[convex_hull], crs=edges.crs)
+        logger.info('Convex hull calculated and converted to GeoDataFrame'.format(city))
+        graph_obj[city]['hull_area'] = convex_hull.area
+        logger.info('Calculating basic stats for {}'.format(city))
+        b_stats = pd.Series(ox.basic_stats(graph, area=convex_hull.area))
+        streets_per_node_counts = b_stats['streets_per_node_counts']
+        streets_per_node_proportions = b_stats['streets_per_node_proportions']
+        graph_obj[city]['streets_per_node_proportions'] = streets_per_node_proportions
+        graph_obj[city]['streets_per_node_counts'] = streets_per_node_counts
+        b_stats.drop(labels=['streets_per_node_proportions', 'streets_per_node_counts'], inplace=True)
+        graph_obj[city]['basic_stats_elementary'] = b_stats
+        logger.info('Basic stats DONE'.format(city))
+    return graph_obj
