@@ -11,3 +11,14 @@ I initially used to copy the coordinates of the portal and its name into Google 
 # python
 ## Exercise-4-programming.ipynb
 The Jupyter notebook was written as a course assignment for "Spatial data science for sustainable development" at Aalto University. The project is described in the notebook. Most of the basic writing is initially included in the notebook which was supplied by the course instructor but all the Python code was written by me. The assignment uses Python GIS libraries such as GeoPandas, NetworkX, OSMnx, Esda and PySAL. 
+
+## Automating-GIS-processes
+See associated README.md files for more information. Exercise 5 differs from most exercises because there was an open problem without any existing code so I could do what I want in the limits of the problem definition. I chose to visualize wind power generation and windspeed on a particular date (2022-12-12) using data from Fingrid, Finnish Metereological Institute, and National Land Survey of Finland. Power generation data was downloaded from Fingrid as a CSV file while the rest was fetched from different APIs:
+- FMI
+    - FMI API using from fmiopendata.wfs Python module
+- NLS
+    - OGC Api Features endpoint, https://avoin-paikkatieto.maanmittauslaitos.fi/maastotiedot/features/v1/
+ 
+
+## Geo-Python-2021
+See associated README.md file
